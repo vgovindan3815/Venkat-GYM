@@ -14,7 +14,23 @@ export type SessionUser = {
 }
 
 export type MealName = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snacks'
-export type TabName = 'today' | 'log' | 'history' | 'admin'
+export type TabName = 'today' | 'log' | 'history' | 'exercise' | 'profile' | 'admin'
+
+export type Sex = 'male' | 'female' | 'other'
+
+export type WeightEntry = {
+  date: string  // YYYY-MM-DD
+  weightKg: number
+}
+
+export type UserProfile = {
+  name: string
+  age: number | null
+  heightCm: number | null
+  weightKg: number | null
+  sex: Sex | null
+  photoDataUrl: string | null
+}
 
 export type Food = {
   id?: string
@@ -36,6 +52,66 @@ export type LoggedFood = Food & {
   id: number
 }
 
+export type ExerciseCategory = 'strength' | 'cardio' | 'mobility' | 'sports'
+
+export type BodyPart = 'chest' | 'arms' | 'shoulders' | 'abdomen' | 'thighs' | 'back' | 'cardio'
+
+export type ExerciseEquipment =
+  | 'barbell'
+  | 'dumbbell'
+  | 'cable'
+  | 'machine'
+  | 'bench'
+  | 'bodyweight'
+  | 'treadmill'
+  | 'bike'
+
+export type WorkoutExercise = {
+  id: string
+  name: string
+  equipment: ExerciseEquipment
+  category: ExerciseCategory
+  sets?: number
+  reps?: string
+  durationMin?: number
+  restSec?: number
+  targetMuscles: string[]
+  instructions: string
+}
+
+export type WorkoutDayPlan = {
+  key: string
+  title: string
+  focus: string
+  warmup: string
+  exercises: WorkoutExercise[]
+  cooldown: string
+}
+
+export type WorkoutProgress = {
+  exerciseId: string
+  completed: boolean
+  setsDone?: number
+  repsDone?: string
+  durationDoneMin?: number
+  notes?: string
+}
+
+export type WorkoutProgressByDate = Record<string, WorkoutProgress[]>
+
+export type GymActivity = {
+  id: number
+  name: string
+  category: ExerciseCategory
+  durationMin: number
+  caloriesBurned: number
+  equipment?: ExerciseEquipment
+  notes?: string
+  loggedAt: string
+}
+
+export type GymActivityByDate = Record<string, GymActivity[]>
+
 export type DayLog = Partial<Record<MealName, LoggedFood[]>>
 export type LogByDate = Record<string, DayLog>
 
@@ -43,6 +119,11 @@ export type PersistedTrackerState = {
   goal: number
   log: LogByDate
   customFoods: Food[]
+  workoutProgress: WorkoutProgressByDate
+  gymActivities: GymActivityByDate
+  customSchedule: Record<string, string[]>
+  userProfile: UserProfile
+  weightLog: WeightEntry[]
 }
 
 export type ScanResult = {
@@ -53,4 +134,5 @@ export type ScanResult = {
   fat: number
   confidence?: 'high' | 'medium' | 'low'
   notes?: string
+  provider?: 'gemini' | 'offline'
 }

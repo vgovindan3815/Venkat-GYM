@@ -1,11 +1,25 @@
-import type { PersistedTrackerState } from '../types'
+import type { PersistedTrackerState, UserProfile } from '../types'
 
 const STORAGE_KEY = 'caloriecounter-state'
+
+const defaultProfile: UserProfile = {
+  name: '',
+  age: null,
+  heightCm: null,
+  weightKg: null,
+  sex: null,
+  photoDataUrl: null,
+}
 
 const defaultState: PersistedTrackerState = {
   goal: 1800,
   log: {},
   customFoods: [],
+  workoutProgress: {},
+  gymActivities: {},
+  customSchedule: {},
+  userProfile: defaultProfile,
+  weightLog: [],
 }
 
 export function loadTrackerState(): PersistedTrackerState {
@@ -20,6 +34,11 @@ export function loadTrackerState(): PersistedTrackerState {
       goal: parsed.goal || defaultState.goal,
       log: parsed.log || defaultState.log,
       customFoods: parsed.customFoods || defaultState.customFoods,
+      workoutProgress: parsed.workoutProgress || defaultState.workoutProgress,
+      gymActivities: parsed.gymActivities || defaultState.gymActivities,
+      customSchedule: parsed.customSchedule || defaultState.customSchedule,
+      userProfile: parsed.userProfile || defaultState.userProfile,
+      weightLog: parsed.weightLog || defaultState.weightLog,
     }
   } catch {
     return defaultState

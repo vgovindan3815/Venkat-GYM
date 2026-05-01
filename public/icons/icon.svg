@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="110" fill="#0b1120"/>
+  <!-- Flame / calorie icon -->
+  <path d="M256 80 C256 80 320 160 320 230 C320 270 300 290 290 295 C295 270 280 255 265 260 C270 240 260 215 240 210 C245 235 230 255 220 270 C200 255 192 230 196 210 C170 235 176 280 190 295 C180 290 160 270 160 230 C160 160 256 80 256 80Z" fill="#22d3ee"/>
+  <ellipse cx="256" cy="340" rx="70" ry="12" fill="#22d3ee" opacity="0.3"/>
+  <!-- Fork and knife -->
+  <rect x="168" y="360" width="8" height="80" rx="4" fill="#4ade80"/>
+  <rect x="168" y="360" width="8" height="36" rx="4" fill="#4ade80"/>
+  <path d="M164 360 Q164 376 172 380 Q180 376 180 360" fill="#4ade80"/>
+  <rect x="332" y="360" width="8" height="80" rx="4" fill="#4ade80"/>
+  <rect x="336" y="360" width="4" height="50" rx="2" fill="#4ade80"/>
+  <!-- Text: kcal -->
+  <text x="256" y="470" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="700" fill="#22d3ee">kcal</text>
+</svg>

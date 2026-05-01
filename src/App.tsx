@@ -1,13 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import AdminPanel from './components/AdminPanel'
 import { MacroBar, RingChart } from './components/charts'
+import ExercisePlanner from './components/ExercisePlanner'
 import LoginForm from './components/LoginForm'
 import ScanFoodModal from './components/ScanFoodModal'
+import UserProfile from './components/UserProfile'
 import { BASE_FOOD_DB } from './data/foodDb'
 import { getSessionUser, login, logout } from './services/auth'
 import { predictFoodsWithAI, rankFoodResults, searchFoodsFromPublicRepo } from './services/foodSearch'
 import { loadTrackerState, saveTrackerState } from './services/storage'
-import type { Food, FoodSearchResult, LogByDate, MealName, SessionUser, TabName } from './types'
+import type {
+  Food,
+  FoodSearchResult,
+  GymActivity,
+  GymActivityByDate,
+  LogByDate,
+  MealName,
+  SessionUser,
+  TabName,
+  UserProfile as UserProfileType,
+  WeightEntry,
+  WorkoutProgress,
+  WorkoutProgressByDate,
+} from './types'
 
 const MEALS: MealName[] = ['Breakfast', 'Lunch', 'Dinner', 'Snacks']
 
@@ -55,6 +70,15 @@ function isLikelyEnglishName(name: string): boolean {
   return asciiRatio >= 0.85 && latinLetters >= 3
 }
 
+function tabLabel(tab: TabName): string {
+  if (tab === 'today') return 'Today'
+  if (tab === 'log') return 'Log'
+  if (tab === 'history') return 'History'
+  if (tab === 'exercise') return 'Exercise'
+  if (tab === 'profile') return 'Profile'
+  return 'Admin'
+}
+
 function App() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => getSessionUser())
   const [tab, setTab] = useState<TabName>('today')
@@ -63,6 +87,13 @@ function App() {
   const [editingGoal, setEditingGoal] = useState(false)
   const [log, setLog] = useState<LogByDate>({})
   const [customFoods, setCustomFoods] = useState<Food[]>([])
+  const [workoutProgress, setWorkoutProgress] = useState<WorkoutProgressByDate>({})
+  const [gymActivities, setGymActivities] = useState<GymActivityByDate>({})
+  const [customSchedule, setCustomSchedule] = useState<Record<string, string[]>>({})
+  const [userProfile, setUserProfile] = useState<UserProfileType>({
+    name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null,
+  })
+  const [weightLog, setWeightLog] = useState<WeightEntry[]>([])
   const [selectedMeal, setSelectedMeal] = useState<MealName>('Breakfast')
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<FoodSearchResult[]>([])
@@ -94,11 +125,16 @@ function App() {
     setGoalInput(String(trackerState.goal))
     setLog(trackerState.log)
     setCustomFoods(trackerState.customFoods)
+    setWorkoutProgress(trackerState.workoutProgress)
+    setGymActivities(trackerState.gymActivities)
+    setCustomSchedule(trackerState.customSchedule ?? {})
+    setUserProfile(trackerState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null })
+    setWeightLog(trackerState.weightLog ?? [])
   }, [])
 
   useEffect(() => {
-    saveTrackerState({ goal, log, customFoods })
-  }, [goal, log, customFoods])
+    saveTrackerState({ goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog })
+  }, [goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog])
 
   useEffect(() => {
     if (tab === 'admin' && sessionUser?.role !== 'admin') {
@@ -320,6 +356,65 @@ function App() {
     setCustomFoods((previous) => previous.filter((_, currentIndex) => currentIndex !== index))
   }
 
+  function upsertWorkoutProgress(entry: WorkoutProgress) {
+    setWorkoutProgress((previous) => {
+      const current = previous[today] ?? []
+      const next = [...current]
+      const index = next.findIndex((item) => item.exerciseId === entry.exerciseId)
+
+      if (index >= 0) {
+        next[index] = entry
+      } else {
+        next.push(entry)
+      }
+
+      return {
+        ...previous,
+        [today]: next,
+      }
+    })
+  }
+
+  function addGymActivity(activity: Omit<GymActivity, 'id' | 'loggedAt'>) {
+    const nextActivity: GymActivity = {
+      ...activity,
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      loggedAt: new Date().toISOString(),
+    }
+
+    setGymActivities((previous) => {
+      const dayActivities = previous[today] ?? []
+      return {
+        ...previous,
+        [today]: [nextActivity, ...dayActivities],
+      }
+    })
+  }
+
+  function removeGymActivity(activityId: number) {
+    setGymActivities((previous) => {
+      const dayActivities = previous[today] ?? []
+      return {
+        ...previous,
+        [today]: dayActivities.filter((item) => item.id !== activityId),
+      }
+    })
+  }
+
+  function addToCustomSchedule(dateKey: string, exerciseIds: string[]) {
+    setCustomSchedule((previous) => ({
+      ...previous,
+      [dateKey]: [...new Set([...(previous[dateKey] ?? []), ...exerciseIds])],
+    }))
+  }
+
+  function removeFromCustomSchedule(dateKey: string, exerciseId: string) {
+    setCustomSchedule((previous) => ({
+      ...previous,
+      [dateKey]: (previous[dateKey] ?? []).filter((id) => id !== exerciseId),
+    }))
+  }
+
   if (!sessionUser) {
     return <LoginForm onLogin={handleLogin} />
   }
@@ -347,10 +442,13 @@ function App() {
     fontWeight: active ? 700 : 500,
   })
 
-  const visibleTabs: TabName[] = sessionUser.role === 'admin' ? ['today', 'log', 'history', 'admin'] : ['today', 'log', 'history']
+  const visibleTabs: TabName[] =
+    sessionUser.role === 'admin'
+      ? ['today', 'log', 'exercise', 'profile', 'history', 'admin']
+      : ['today', 'log', 'exercise', 'profile', 'history']
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0b1120', color: '#e2e8f0', maxWidth: 430, margin: '0 auto', paddingBottom: 88 }}>
+    <div style={{ minHeight: '100vh', background: '#0b1120', color: '#e2e8f0', maxWidth: 430, margin: '0 auto', paddingBottom: 'calc(88px + env(safe-area-inset-bottom))' }}>
       {showScanModal && (
         <ScanFoodModal
           selectedMeal={selectedMeal}
@@ -401,8 +499,8 @@ function App() {
 
       <div style={{ display: 'flex', gap: 8, padding: '16px 20px 0', flexWrap: 'wrap' }}>
         {visibleTabs.map((nextTab) => (
-          <button key={nextTab} onClick={() => setTab(nextTab)} style={chipButtonStyle(tab === nextTab, nextTab === 'admin' ? '#a78bfa' : '#22d3ee')}>
-            {nextTab === 'today' ? 'Today' : nextTab === 'log' ? 'Log' : nextTab === 'history' ? 'History' : 'Admin'}
+          <button key={nextTab} onClick={() => setTab(nextTab)} style={chipButtonStyle(tab === nextTab, nextTab === 'admin' ? '#a78bfa' : nextTab === 'exercise' ? '#4ade80' : '#22d3ee')}>
+            {tabLabel(nextTab)}
           </button>
         ))}
       </div>
@@ -687,19 +785,48 @@ function App() {
           </>
         )}
 
+        {tab === 'exercise' && (
+          <ExercisePlanner
+            dateKey={today}
+            workoutProgress={workoutProgress}
+            gymActivities={gymActivities}
+            customSchedule={customSchedule}
+            onUpdateProgress={upsertWorkoutProgress}
+            onAddActivity={addGymActivity}
+            onDeleteActivity={removeGymActivity}
+            onAddToSchedule={addToCustomSchedule}
+            onRemoveFromSchedule={removeFromCustomSchedule}
+          />
+        )}
+
+        {tab === 'profile' && (
+          <UserProfile
+            profile={userProfile}
+            weightLog={weightLog}
+            onSaveProfile={(p) => setUserProfile(p)}
+            onAddWeight={(entry) => {
+              setWeightLog((prev) => {
+                // Replace same-day entry if exists, otherwise append
+                const filtered = prev.filter((e) => e.date !== entry.date)
+                return [...filtered, entry]
+              })
+            }}
+          />
+        )}
+
         {tab === 'admin' && sessionUser.role === 'admin' && (
           <AdminPanel customFoods={customFoods} onAddFood={addCustomCatalogFood} onDeleteFood={removeCustomCatalogFood} />
         )}
       </div>
 
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, background: '#0b1120', borderTop: '1px solid #1e293b', display: 'flex', padding: '12px 0 20px' }}>
+      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, background: '#0b1120', borderTop: '1px solid #1e293b', display: 'flex', padding: '12px 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
         {visibleTabs.map((item) => (
           <button
             key={item}
             onClick={() => setTab(item)}
             style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, color: tab === item ? '#22d3ee' : '#475569' }}
           >
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{item === 'admin' ? 'Admin' : item[0].toUpperCase() + item.slice(1)}</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{tabLabel(item)}</span>
           </button>
         ))}
       </div>
