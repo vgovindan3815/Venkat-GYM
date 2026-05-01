@@ -61,6 +61,41 @@ function categoryColor(category: ExerciseCategory): string {
   }
 }
 
+function inferBodyPartsFromTargets(targetMuscles: string[], category: ExerciseCategory): BodyPart[] {
+  const text = targetMuscles.join(' ').toLowerCase()
+  const parts = new Set<BodyPart>()
+
+  if (text.includes('chest')) parts.add('chest')
+  if (text.includes('bicep') || text.includes('tricep') || text.includes('forearm')) parts.add('arms')
+  if (text.includes('shoulder') || text.includes('delt')) parts.add('shoulders')
+  if (text.includes('core') || text.includes('ab') || text.includes('oblique')) parts.add('abdomen')
+  if (text.includes('quad') || text.includes('hamstring') || text.includes('glute') || text.includes('calf') || text.includes('leg')) parts.add('thighs')
+  if (text.includes('back') || text.includes('lat') || text.includes('trap') || text.includes('spine')) parts.add('back')
+  if (category === 'cardio') parts.add('cardio')
+
+  if (parts.size === 0) {
+    parts.add(category === 'cardio' ? 'cardio' : 'shoulders')
+  }
+
+  return Array.from(parts)
+}
+
+function inferGraphicFromExercise(name: string, equipment: ExerciseEquipment, category: ExerciseCategory, targetMuscles: string[]): MovementGraphic {
+  const text = `${name} ${targetMuscles.join(' ')}`.toLowerCase()
+  if (text.includes('squat')) return 'squat'
+  if (text.includes('lunge')) return 'lunge'
+  if (text.includes('deadlift') || text.includes('hinge')) return 'hinge'
+  if (text.includes('row')) return 'row'
+  if (text.includes('pulldown') || text.includes('pull-up') || text.includes('pullup')) return 'pulldown'
+  if (text.includes('curl')) return 'curl'
+  if (text.includes('plank')) return 'plank'
+  if (text.includes('fly')) return 'fly'
+  if (equipment === 'bike') return 'cycle'
+  if (equipment === 'treadmill') return 'run'
+  if (category === 'strength') return 'press'
+  return 'run'
+}
+
 function EquipmentGraphic({ equipment }: { equipment: ExerciseEquipment }) {
   if (equipment === 'treadmill') {
     return (
@@ -388,6 +423,130 @@ function ExerciseGuideModal({ exercise, onClose }: { exercise: GymExerciseGuide;
   const [imgIndex, setImgIndex] = useState(0)
   const [imgError, setImgError] = useState(false)
   const [playing, setPlaying] = useState(true)
+  const [isLandscape, setIsLandscape] = useState(false)
+  const [usePublicVideo, setUsePublicVideo] = useState(false)
+  const [videoUrlInput, setVideoUrlInput] = useState('')
+  const [publicEmbedUrl, setPublicEmbedUrl] = useState<string | null>(null)
+  const [videoInputError, setVideoInputError] = useState('')
+
+  function getAutoYouTubeEmbed(query: string): string {
+    return `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1&mute=1&playsinline=1`
+  }
+
+  function equipmentSearchHint(): string {
+    if (exercise.equipment === 'bodyweight') return 'bodyweight'
+    if (exercise.equipment === 'treadmill' || exercise.equipment === 'bike') return `${exercise.equipment} cardio`
+    return exercise.equipment
+  }
+
+  const primaryMuscle = exercise.targetMuscles[0] ?? 'muscle'
+  const suggestedVideos = [
+    {
+      label: 'Auto: Form Tutorial',
+      embedUrl: getAutoYouTubeEmbed(`${exercise.name} ${equipmentSearchHint()} proper form`),
+    },
+    {
+      label: 'Auto: Beginner Guide',
+      embedUrl: getAutoYouTubeEmbed(`${exercise.name} beginner ${equipmentSearchHint()} tutorial`),
+    },
+    {
+      label: `Auto: ${primaryMuscle} Focus`,
+      embedUrl: getAutoYouTubeEmbed(`${exercise.name} ${primaryMuscle} activation technique`),
+    },
+  ]
+
+  function getYouTubeSearchUrl(): string {
+    const query = encodeURIComponent(`${exercise.name} exercise form tutorial`)
+    return `https://www.youtube.com/results?search_query=${query}`
+  }
+
+  function toEmbedUrl(rawUrl: string): string | null {
+    try {
+      const url = new URL(rawUrl)
+      const host = url.hostname.replace(/^www\./, '')
+
+      if (host === 'youtube.com' || host === 'm.youtube.com') {
+        if (url.pathname === '/watch') {
+          const id = url.searchParams.get('v')
+          if (!id) return null
+          return `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&playsinline=1`
+        }
+        if (url.pathname.startsWith('/shorts/')) {
+          const id = url.pathname.split('/')[2]
+          if (!id) return null
+          return `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&playsinline=1`
+        }
+      }
+
+      if (host === 'youtu.be') {
+        const id = url.pathname.slice(1)
+        if (!id) return null
+        return `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&playsinline=1`
+      }
+
+      if (host === 'vimeo.com') {
+        const id = url.pathname.split('/').filter(Boolean)[0]
+        if (!id) return null
+        return `https://player.vimeo.com/video/${id}?autoplay=1&muted=1`
+      }
+
+      if (host === 'dailymotion.com') {
+        const parts = url.pathname.split('/').filter(Boolean)
+        const videoIndex = parts.findIndex((part) => part === 'video')
+        const id = videoIndex >= 0 ? parts[videoIndex + 1] : null
+        if (!id) return null
+        return `https://www.dailymotion.com/embed/video/${id}?autoplay=1&mute=1`
+      }
+
+      if (host === 'dai.ly') {
+        const id = url.pathname.slice(1)
+        if (!id) return null
+        return `https://www.dailymotion.com/embed/video/${id}?autoplay=1&mute=1`
+      }
+
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  function handleReplaceWithVideo() {
+    const embed = toEmbedUrl(videoUrlInput.trim())
+    if (!embed) {
+      setVideoInputError('Paste a valid YouTube, Vimeo, or Dailymotion link.')
+      return
+    }
+    setPublicEmbedUrl(embed)
+    setUsePublicVideo(true)
+    setVideoInputError('')
+  }
+
+  function applySuggestedVideo(embedUrl: string) {
+    setPublicEmbedUrl(embedUrl)
+    setUsePublicVideo(true)
+    setVideoInputError('')
+  }
+
+  useEffect(() => {
+    const updateOrientation = () => setIsLandscape(window.innerWidth > window.innerHeight)
+    updateOrientation()
+    window.addEventListener('resize', updateOrientation)
+    window.addEventListener('orientationchange', updateOrientation)
+    return () => {
+      window.removeEventListener('resize', updateOrientation)
+      window.removeEventListener('orientationchange', updateOrientation)
+    }
+  }, [])
+
+  useEffect(() => {
+    setUsePublicVideo(false)
+    setPublicEmbedUrl(null)
+    setVideoUrlInput('')
+    setVideoInputError('')
+    setImgError(false)
+    setImgIndex(0)
+    setPlaying(true)
+  }, [exercise.id])
 
   const photoUrl = exercise.photoId && !imgError
     ? `${FREE_EXERCISE_BASE}/${exercise.photoId}/${imgIndex}.jpg`
@@ -403,14 +562,27 @@ function ExerciseGuideModal({ exercise, onClose }: { exercise: GymExerciseGuide;
   }, [exercise.photoId, imgError, playing])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.88)', zIndex: 120, display: 'grid', alignItems: 'end' }}>
-      <div style={{ background: '#111c2f', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 430, margin: '0 auto', padding: 16, maxHeight: '85vh', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.92)', zIndex: 120, display: 'grid', alignItems: isLandscape ? 'stretch' : 'end' }}>
+      <div
+        style={{
+          background: '#111c2f',
+          borderRadius: isLandscape ? 0 : '20px 20px 0 0',
+          width: '100%',
+          maxWidth: isLandscape ? '100%' : 430,
+          margin: '0 auto',
+          padding: isLandscape ? 10 : 16,
+          maxHeight: isLandscape ? '100vh' : '85vh',
+          height: isLandscape ? '100vh' : 'auto',
+          overflowY: 'auto',
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{exercise.name}</div>
             <div style={{ marginTop: 3, fontSize: 12, color: '#94a3b8' }}>
               {equipmentLabel(exercise.equipment)} • {exercise.category} • {exercise.targetMuscles.join(', ')}
             </div>
+            {isLandscape && <div style={{ marginTop: 4, fontSize: 11, color: '#22d3ee' }}>Landscape mode: media expanded fullscreen</div>}
           </div>
           <button onClick={onClose} style={{ background: '#1e293b', border: 'none', color: '#94a3b8', borderRadius: 10, padding: '6px 10px', cursor: 'pointer' }}>
             Close
@@ -418,8 +590,17 @@ function ExerciseGuideModal({ exercise, onClose }: { exercise: GymExerciseGuide;
         </div>
 
         {/* Photo or SVG graphic */}
-        <div style={{ marginTop: 12, borderRadius: 12, overflow: 'hidden', background: '#0f172a', position: 'relative' }}>
-          {photoUrl ? (
+        <div style={{ marginTop: 12, borderRadius: 12, overflow: 'hidden', background: '#0f172a', position: 'relative', height: isLandscape ? 'calc(100vh - 150px)' : undefined }}>
+          {usePublicVideo && publicEmbedUrl ? (
+            <iframe
+              src={publicEmbedUrl}
+              title={`${exercise.name} video demo`}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+              style={{ width: '100%', height: isLandscape ? '100%' : 240, border: 'none', display: 'block', background: '#000' }}
+            />
+          ) : photoUrl ? (
             <>
               <img
                 src={photoUrl}
@@ -431,7 +612,7 @@ function ExerciseGuideModal({ exercise, onClose }: { exercise: GymExerciseGuide;
                     setImgError(true)
                   }
                 }}
-                style={{ width: '100%', display: 'block', maxHeight: 220, objectFit: 'cover', transition: 'opacity 0.3s ease' }}
+                style={{ width: '100%', display: 'block', maxHeight: isLandscape ? '100%' : 220, height: isLandscape ? '100%' : undefined, objectFit: 'cover', transition: 'opacity 0.3s ease' }}
               />
               {/* Playback controls */}
               {!imgError && (
@@ -451,27 +632,97 @@ function ExerciseGuideModal({ exercise, onClose }: { exercise: GymExerciseGuide;
               )}
             </>
           ) : (
-            <div style={{ display: 'grid', placeItems: 'center', padding: 20 }}>
+            <div style={{ display: 'grid', placeItems: 'center', padding: 20, height: isLandscape ? '100%' : undefined }}>
               <MovementGraphicView movement={exercise.graphic} />
             </div>
           )}
         </div>
 
-        <div style={{ marginTop: 10, fontSize: 12, color: '#94a3b8' }}>{exercise.overview}</div>
-
-        <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>How to do it</div>
-        {exercise.steps.map((step, index) => (
-          <div key={`${exercise.id}-step-${index}`} style={{ marginTop: 6, fontSize: 13, color: '#e2e8f0' }}>
-            {index + 1}. {step}
+        <div style={{ marginTop: 10, border: '1px solid #1e293b', borderRadius: 12, padding: 10, background: '#0f172a' }}>
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>Media source</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setUsePublicVideo(false)}
+              style={{ border: '1px solid #334155', borderRadius: 8, padding: '5px 10px', background: usePublicVideo ? 'transparent' : '#1e293b', color: usePublicVideo ? '#94a3b8' : '#22d3ee', fontSize: 12, cursor: 'pointer' }}
+            >
+              Built-in demo
+            </button>
+            <button
+              onClick={() => setUsePublicVideo(true)}
+              style={{ border: '1px solid #334155', borderRadius: 8, padding: '5px 10px', background: usePublicVideo ? '#1e293b' : 'transparent', color: usePublicVideo ? '#4ade80' : '#94a3b8', fontSize: 12, cursor: 'pointer' }}
+            >
+              Public video
+            </button>
+            <button
+              onClick={() => window.open(getYouTubeSearchUrl(), '_blank', 'noopener,noreferrer')}
+              style={{ border: '1px solid #334155', borderRadius: 8, padding: '5px 10px', background: 'transparent', color: '#facc15', fontSize: 12, cursor: 'pointer' }}
+            >
+              Find on YouTube
+            </button>
           </div>
-        ))}
-
-        <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>Coaching tips</div>
-        {exercise.tips.map((tip, index) => (
-          <div key={`${exercise.id}-tip-${index}`} style={{ marginTop: 6, fontSize: 13, color: '#cbd5e1' }}>
-            • {tip}
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {suggestedVideos.map((item) => (
+              <button
+                key={item.label}
+                onClick={() => applySuggestedVideo(item.embedUrl)}
+                style={{ border: '1px solid #334155', borderRadius: 999, padding: '5px 10px', background: '#111827', color: '#93c5fd', fontSize: 11, cursor: 'pointer' }}
+              >
+                {item.label}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setVideoUrlInput(`https://www.dailymotion.com/search/${encodeURIComponent(`${exercise.name} exercise tutorial`)}/videos`)
+                setVideoInputError('')
+              }}
+              style={{ border: '1px solid #334155', borderRadius: 999, padding: '5px 10px', background: '#111827', color: '#c4b5fd', fontSize: 11, cursor: 'pointer' }}
+            >
+              Suggest public-site search link
+            </button>
           </div>
-        ))}
+          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+            <input
+              value={videoUrlInput}
+              onChange={(event) => {
+                setVideoUrlInput(event.target.value)
+                if (videoInputError) setVideoInputError('')
+              }}
+              placeholder="Paste YouTube/Vimeo/Dailymotion link"
+              style={{ flex: 1, background: '#111827', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0', padding: '8px 10px', fontSize: 12 }}
+            />
+            <button
+              onClick={handleReplaceWithVideo}
+              style={{ border: 'none', borderRadius: 8, padding: '8px 10px', background: '#4ade80', color: '#052e16', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+            >
+              Replace
+            </button>
+          </div>
+          {videoInputError && <div style={{ marginTop: 6, fontSize: 11, color: '#f87171' }}>{videoInputError}</div>}
+        </div>
+
+        {!isLandscape && <div style={{ marginTop: 10, fontSize: 12, color: '#94a3b8' }}>{exercise.overview}</div>}
+
+        {!isLandscape && (
+          <>
+            <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>How to do it</div>
+            {exercise.steps.map((step, index) => (
+              <div key={`${exercise.id}-step-${index}`} style={{ marginTop: 6, fontSize: 13, color: '#e2e8f0' }}>
+                {index + 1}. {step}
+              </div>
+            ))}
+          </>
+        )}
+
+        {!isLandscape && (
+          <>
+            <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>Coaching tips</div>
+            {exercise.tips.map((tip, index) => (
+              <div key={`${exercise.id}-tip-${index}`} style={{ marginTop: 6, fontSize: 13, color: '#cbd5e1' }}>
+                • {tip}
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )
@@ -750,13 +1001,39 @@ export default function ExercisePlanner({
           const categoryTint = categoryColor(category)
           const isCustom = 'isCustom' in exercise && exercise.isCustom
           const isSelectedForSchedule = selectedForSchedule.has(exercise.id)
-          const bodyParts = guide?.bodyParts ?? []
+          const fallbackGuide: GymExerciseGuide = {
+            id: exercise.id,
+            name: exercise.name,
+            equipment: exercise.equipment,
+            category,
+            targetMuscles: exercise.targetMuscles,
+            overview:
+              ('instructions' in exercise && exercise.instructions)
+                ? exercise.instructions
+                : 'No built-in form images are available yet for this exercise. Use a public video option to view live form demonstrations.',
+            steps:
+              ('instructions' in exercise && exercise.instructions)
+                ? [exercise.instructions]
+                : [
+                    'Set up with controlled posture and stable breathing.',
+                    'Move through a pain-free range with controlled tempo.',
+                    'Use the video options below for full technique reference.',
+                  ],
+            tips: [
+              'Keep core braced and avoid momentum.',
+              'Use a load that allows strict form throughout the set.',
+            ],
+            graphic: inferGraphicFromExercise(exercise.name, exercise.equipment, category, exercise.targetMuscles),
+            bodyParts: inferBodyPartsFromTargets(exercise.targetMuscles, category),
+          }
+          const resolvedGuide = guide ?? fallbackGuide
+          const bodyParts = resolvedGuide.bodyParts
 
           return (
             <article
               key={exercise.id}
-              onClick={() => { if (guide) setSelectedExercise(guide) }}
-              style={{ border: `1px solid ${viewMode === 'bodymap' && isSelectedForSchedule ? '#a78bfa' : '#1e293b'}`, borderRadius: 16, padding: 12, marginBottom: 10, background: viewMode === 'bodymap' && isSelectedForSchedule ? '#1e1338' : '#0f172a', cursor: guide ? 'pointer' : 'default' }}
+              onClick={() => setSelectedExercise(resolvedGuide)}
+              style={{ border: `1px solid ${viewMode === 'bodymap' && isSelectedForSchedule ? '#a78bfa' : '#1e293b'}`, borderRadius: 16, padding: 12, marginBottom: 10, background: viewMode === 'bodymap' && isSelectedForSchedule ? '#1e1338' : '#0f172a', cursor: 'pointer' }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -773,7 +1050,7 @@ export default function ExercisePlanner({
                     </div>
                   </div>
                 </div>
-                {guide && <div style={{ fontSize: 18, color: '#334155' }}>›</div>}
+                <div style={{ fontSize: 18, color: '#334155' }}>›</div>
               </div>
 
               {/* Body part tags in body map and library modes */}

@@ -116,6 +116,7 @@ function App() {
   const [customFat, setCustomFat] = useState('')
   const [showCustomForm, setShowCustomForm] = useState(false)
   const [showScanModal, setShowScanModal] = useState(false)
+  const [addToast, setAddToast] = useState('')
 
   const today = getTodayKey()
 
@@ -141,6 +142,12 @@ function App() {
       setTab('today')
     }
   }, [tab, sessionUser])
+
+  useEffect(() => {
+    if (!addToast) return
+    const timer = window.setTimeout(() => setAddToast(''), 1300)
+    return () => window.clearTimeout(timer)
+  }, [addToast])
 
   const foodDb = useMemo(() => [...BASE_FOOD_DB, ...customFoods], [customFoods])
 
@@ -272,6 +279,11 @@ function App() {
     setSearchStatus('')
   }
 
+  function addFoodWithToast(food: Food, meal: MealName = selectedMeal) {
+    addFood(food, meal)
+    setAddToast(`Added ${food.name}`)
+  }
+
   function withNormalizedAmount(food: FoodSearchResult): Food {
     const rawAmount = Number(addAmount)
     const amount = Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 1
@@ -313,6 +325,12 @@ function App() {
         },
       }
     })
+  }
+
+  function handleTodayMealTap(meal: MealName) {
+    setSelectedMeal(meal)
+    // Briefly show selection highlight before opening Log tab.
+    window.setTimeout(() => setTab('log'), 140)
   }
 
   function handleGoalSave() {
@@ -520,22 +538,30 @@ function App() {
             {MEALS.map((meal) => {
               const items = todayEntries[meal] ?? []
               const mealCalories = items.reduce((sum, entry) => sum + entry.calories, 0)
+              const isSelectedMeal = selectedMeal === meal
 
               return (
-                <section key={meal} style={{ background: '#131e30', borderRadius: 16, padding: 16, marginBottom: 12 }}>
+                <section
+                  key={meal}
+                  onClick={() => handleTodayMealTap(meal)}
+                  style={{
+                    background: '#131e30',
+                    borderRadius: 16,
+                    padding: 16,
+                    marginBottom: 12,
+                    cursor: 'pointer',
+                    border: `1.5px solid ${isSelectedMeal ? '#22c55e' : '#1e293b'}`,
+                    boxShadow: isSelectedMeal ? '0 0 0 1px #16a34a55 inset' : 'none',
+                    transition: 'border-color 140ms ease, box-shadow 140ms ease, transform 120ms ease',
+                  }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: items.length > 0 ? 10 : 0 }}>
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{meal}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <span style={{ fontSize: 13, color: '#64748b' }}>{mealCalories} kcal</span>
-                      <button
-                        onClick={() => {
-                          setSelectedMeal(meal)
-                          setTab('log')
-                        }}
-                        style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#22d3ee', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
-                      >
-                        Add
-                      </button>
+                      <span style={{ fontSize: 11, color: isSelectedMeal ? '#4ade80' : '#64748b', border: `1px solid ${isSelectedMeal ? '#15803d' : '#334155'}`, borderRadius: 999, padding: '3px 8px', background: isSelectedMeal ? '#052e16' : '#1e293b' }}>
+                        Tap to add
+                      </span>
                     </div>
                   </div>
                   {items.length === 0 && <div style={{ fontSize: 13, color: '#64748b' }}>No items logged yet.</div>}
@@ -549,7 +575,13 @@ function App() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ fontSize: 13 }}>{item.calories}</span>
-                        <button onClick={() => removeEntry(meal, item.id)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18 }}>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            removeEntry(meal, item.id)
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18 }}
+                        >
                           ×
                         </button>
                       </div>
@@ -683,22 +715,39 @@ function App() {
 
             <div style={{ background: '#131e30', borderRadius: 16, padding: 16 }}>
               <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>Common foods</div>
+              <div style={{ fontSize: 11, color: '#4ade80', marginBottom: 8 }}>Tap anywhere on a row to add food</div>
               {foodDb.map((food, index) => (
                 <button
                   key={`${food.name}-${index}`}
-                  onClick={() => addFood(food)}
+                  onClick={() => addFoodWithToast(food)}
                   style={{
                     width: '100%',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: index < foodDb.length - 1 ? '1px solid #1e293b' : 'none',
-                    padding: '10px 0',
+                    background: '#0f172a',
+                    border: '1px solid #166534',
+                    borderRadius: 12,
+                    padding: '12px 10px',
+                    marginBottom: index < foodDb.length - 1 ? 8 : 0,
                     cursor: 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     textAlign: 'left',
                     color: 'inherit',
+                    transition: 'transform 120ms ease, border-color 120ms ease, background 120ms ease',
+                  }}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.style.borderColor = '#22c55e'
+                    event.currentTarget.style.background = '#10231a'
+                  }}
+                  onMouseLeave={(event) => {
+                    event.currentTarget.style.borderColor = '#166534'
+                    event.currentTarget.style.background = '#0f172a'
+                  }}
+                  onMouseDown={(event) => {
+                    event.currentTarget.style.transform = 'scale(0.99)'
+                  }}
+                  onMouseUp={(event) => {
+                    event.currentTarget.style.transform = 'scale(1)'
                   }}
                 >
                   <div>
@@ -709,7 +758,9 @@ function App() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 13, color: '#22d3ee' }}>{food.calories}</span>
-                    <span style={{ color: '#22d3ee', fontSize: 18 }}>+</span>
+                    <span style={{ color: '#4ade80', fontSize: 11, fontWeight: 700, border: '1px solid #166534', borderRadius: 999, padding: '3px 8px', background: '#052e16' }}>
+                      + Add
+                    </span>
                   </div>
                 </button>
               ))}
@@ -818,6 +869,31 @@ function App() {
           <AdminPanel customFoods={customFoods} onAddFood={addCustomCatalogFood} onDeleteFood={removeCustomCatalogFood} />
         )}
       </div>
+
+      {addToast && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            bottom: 'calc(82px + env(safe-area-inset-bottom))',
+            background: '#052e16',
+            border: '1px solid #22c55e',
+            color: '#86efac',
+            borderRadius: 999,
+            padding: '8px 14px',
+            fontSize: 12,
+            fontWeight: 700,
+            zIndex: 140,
+            maxWidth: '90%',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {addToast}
+        </div>
+      )}
 
       <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, background: '#0b1120', borderTop: '1px solid #1e293b', display: 'flex', padding: '12px 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
         {visibleTabs.map((item) => (
