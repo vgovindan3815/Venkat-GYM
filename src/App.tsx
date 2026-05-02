@@ -6,7 +6,7 @@ import LoginForm from './components/LoginForm'
 import ScanFoodModal from './components/ScanFoodModal'
 import UserProfile from './components/UserProfile'
 import { BASE_FOOD_DB } from './data/foodDb'
-import { getSessionUser, login, logout } from './services/auth'
+import { deleteAccount, getSessionUser, listAccounts, login, logout, registerAccount, updateAccountProfile } from './services/auth'
 import { predictFoodsWithAI, rankFoodResults, searchFoodsFromPublicRepo } from './services/foodSearch'
 import { loadTrackerState, saveTrackerState } from './services/storage'
 import type {
@@ -16,8 +16,10 @@ import type {
   GymActivityByDate,
   LogByDate,
   MealName,
+  RegisterAccountInput,
   SessionUser,
   TabName,
+  UserAccount,
   UserProfile as UserProfileType,
   WeightEntry,
   WorkoutProgress,
@@ -81,6 +83,7 @@ function tabLabel(tab: TabName): string {
 
 function App() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => getSessionUser())
+  const [accounts, setAccounts] = useState<UserAccount[]>(() => listAccounts())
   const [tab, setTab] = useState<TabName>('today')
   const [goal, setGoal] = useState(1800)
   const [goalInput, setGoalInput] = useState('1800')
@@ -121,7 +124,8 @@ function App() {
   const today = getTodayKey()
 
   useEffect(() => {
-    const trackerState = loadTrackerState()
+    if (!sessionUser) return
+    const trackerState = loadTrackerState(sessionUser.email)
     setGoal(trackerState.goal)
     setGoalInput(String(trackerState.goal))
     setLog(trackerState.log)
@@ -131,11 +135,12 @@ function App() {
     setCustomSchedule(trackerState.customSchedule ?? {})
     setUserProfile(trackerState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null })
     setWeightLog(trackerState.weightLog ?? [])
-  }, [])
+  }, [sessionUser])
 
   useEffect(() => {
-    saveTrackerState({ goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog })
-  }, [goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog])
+    if (!sessionUser) return
+    saveTrackerState({ goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog }, sessionUser.email)
+  }, [goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog, sessionUser])
 
   useEffect(() => {
     if (tab === 'admin' && sessionUser?.role !== 'admin') {
@@ -251,7 +256,20 @@ function App() {
   function handleLogin(email: string, password: string): SessionUser | null {
     const session = login(email, password)
     setSessionUser(session)
+    setAccounts(listAccounts())
     return session
+  }
+
+  function handleRegister(input: RegisterAccountInput): { session: SessionUser | null; error?: string } {
+    const created = registerAccount(input, 'user')
+    if (!created.ok) {
+      return { session: null, error: created.error }
+    }
+
+    const session = login(input.email, input.password)
+    setSessionUser(session)
+    setAccounts(listAccounts())
+    return { session }
   }
 
   function handleLogout() {
@@ -434,7 +452,7 @@ function App() {
   }
 
   if (!sessionUser) {
-    return <LoginForm onLogin={handleLogin} />
+    return <LoginForm onLogin={handleLogin} onRegister={handleRegister} />
   }
 
   const inputStyle = {
@@ -866,7 +884,36 @@ function App() {
         )}
 
         {tab === 'admin' && sessionUser.role === 'admin' && (
-          <AdminPanel customFoods={customFoods} onAddFood={addCustomCatalogFood} onDeleteFood={removeCustomCatalogFood} />
+          <AdminPanel
+            customFoods={customFoods}
+            onAddFood={addCustomCatalogFood}
+            onDeleteFood={removeCustomCatalogFood}
+            accounts={accounts}
+            currentAdminEmail={sessionUser.email}
+            onCreateAccount={(input, role) => {
+              const result = registerAccount(input, role)
+              if (result.ok) {
+                setAccounts(listAccounts())
+              }
+              return result
+            }}
+            onDeleteAccount={(email) => {
+              if (email === sessionUser.email) return
+              deleteAccount(email)
+              setAccounts(listAccounts())
+            }}
+            onUpdateAccount={(email, updates) => {
+              const ok = updateAccountProfile(email, updates)
+              if (ok) {
+                setAccounts(listAccounts())
+                if (email === sessionUser.email) {
+                  setSessionUser((prev) => (prev ? { ...prev, displayName: updates.displayName || prev.displayName, role: updates.role || prev.role } : prev))
+                }
+                return { ok: true }
+              }
+              return { ok: false, error: 'Could not update account.' }
+            }}
+          />
         )}
       </div>
 

@@ -1,6 +1,11 @@
 import type { PersistedTrackerState, UserProfile } from '../types'
 
-const STORAGE_KEY = 'caloriecounter-state'
+const STORAGE_KEY_PREFIX = 'caloriecounter-state'
+
+function buildStorageKey(userEmail?: string): string {
+  const normalized = userEmail?.trim().toLowerCase()
+  return normalized ? `${STORAGE_KEY_PREFIX}:${normalized}` : STORAGE_KEY_PREFIX
+}
 
 const defaultProfile: UserProfile = {
   name: '',
@@ -22,9 +27,9 @@ const defaultState: PersistedTrackerState = {
   weightLog: [],
 }
 
-export function loadTrackerState(): PersistedTrackerState {
+export function loadTrackerState(userEmail?: string): PersistedTrackerState {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(buildStorageKey(userEmail))
     if (!raw) {
       return defaultState
     }
@@ -45,9 +50,9 @@ export function loadTrackerState(): PersistedTrackerState {
   }
 }
 
-export function saveTrackerState(nextState: PersistedTrackerState): void {
+export function saveTrackerState(nextState: PersistedTrackerState, userEmail?: string): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState))
+    window.localStorage.setItem(buildStorageKey(userEmail), JSON.stringify(nextState))
   } catch {
     // Ignore storage write errors.
   }

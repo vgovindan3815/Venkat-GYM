@@ -5,6 +5,22 @@ export type UserAccount = {
   password: string
   displayName: string
   role: UserRole
+  fullName: string
+  age: number | null
+  sex: Sex | null
+  phone: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type RegisterAccountInput = {
+  email: string
+  password: string
+  displayName: string
+  fullName: string
+  age: number | null
+  sex: Sex | null
+  phone: string
 }
 
 export type SessionUser = {
