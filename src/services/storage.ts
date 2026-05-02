@@ -68,12 +68,6 @@ export async function pullTrackerStateFromCloud(userEmail?: string): Promise<Per
   const cloudState = await readCloudValue<PersistedTrackerState>(buildCloudKey(userEmail))
   if (!cloudState) return null
 
-  try {
-    window.localStorage.setItem(buildStorageKey(userEmail), JSON.stringify(cloudState))
-  } catch {
-    // Ignore storage write errors.
-  }
-
   return {
     goal: cloudState.goal || defaultState.goal,
     log: cloudState.log || defaultState.log,

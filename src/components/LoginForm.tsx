@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { demoCredentials } from '../services/auth'
 import type { RegisterAccountInput, SessionUser, Sex } from '../types'
 
 type LoginFormProps = {
   onLogin: (email: string, password: string) => SessionUser | null
   onRegister: (input: RegisterAccountInput) => { session: SessionUser | null; error?: string }
+  onGoogleLogin: (idToken: string) => Promise<SessionUser | null>
 }
 
-export default function LoginForm({ onLogin, onRegister }: LoginFormProps) {
+export default function LoginForm({ onLogin, onRegister, onGoogleLogin }: LoginFormProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState(demoCredentials.user.email)
   const [password, setPassword] = useState(demoCredentials.user.password)
@@ -17,6 +18,21 @@ export default function LoginForm({ onLogin, onRegister }: LoginFormProps) {
   const [sex, setSex] = useState<Sex | ''>('')
   const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim()
+
+  useEffect(() => {
+    if (!googleClientId || mode !== 'login') return
+    if (document.getElementById('google-identity-script')) return
+
+    const script = document.createElement('script')
+    script.id = 'google-identity-script'
+    script.src = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.defer = true
+    document.head.appendChild(script)
+  }, [googleClientId, mode])
 
   const inputStyle = {
     width: '100%',
@@ -58,6 +74,70 @@ export default function LoginForm({ onLogin, onRegister }: LoginFormProps) {
     }
 
     setError('')
+  }
+
+  async function handleGoogleSignIn() {
+    if (!googleClientId) {
+      setError('Google sign-in is not configured. Set VITE_GOOGLE_CLIENT_ID.')
+      return
+    }
+
+    const google = (window as Window & {
+      google?: {
+        accounts: {
+          id: {
+            initialize: (args: {
+              client_id: string
+              callback: (response: { credential?: string }) => void
+              auto_select?: boolean
+              cancel_on_tap_outside?: boolean
+            }) => void
+            prompt: () => void
+          }
+        }
+      }
+    }).google
+
+    if (!google?.accounts?.id) {
+      setError('Google sign-in script not loaded yet. Try again in a moment.')
+      return
+    }
+
+    setGoogleLoading(true)
+    setError('')
+
+    try {
+      const idToken = await new Promise<string>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Google sign-in timed out.')), 30000)
+
+        google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: (response) => {
+            window.clearTimeout(timeout)
+            if (!response.credential) {
+              reject(new Error('Google sign-in did not return a token.'))
+              return
+            }
+            resolve(response.credential)
+          },
+          cancel_on_tap_outside: false,
+        })
+
+        google.accounts.id.prompt()
+      })
+
+      const session = await onGoogleLogin(idToken)
+      if (!session) {
+        setError('Google sign-in failed. Please try again.')
+        return
+      }
+
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed.')
+    } finally {
+      setGoogleLoading(false)
+    }
   }
 
   return (
@@ -117,6 +197,8 @@ export default function LoginForm({ onLogin, onRegister }: LoginFormProps) {
         <button onClick={submit} style={{ width: '100%', background: '#22d3ee', border: 'none', borderRadius: 12, color: '#0b1120', padding: '12px 14px', fontWeight: 700, cursor: 'pointer' }}>
           {mode === 'login' ? 'Login' : 'Create Account'}
         </button>
+
+        {/* Google sign-in disabled — re-enable when VITE_GOOGLE_CLIENT_ID is set in Vercel env */}
 
         {mode === 'login' && (
           <div style={{ marginTop: 14, padding: 12, borderRadius: 12, background: '#0f172a', fontSize: 12, color: '#94a3b8' }}>

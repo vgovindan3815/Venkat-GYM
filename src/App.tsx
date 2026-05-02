@@ -6,7 +6,7 @@ import LoginForm from './components/LoginForm'
 import ScanFoodModal from './components/ScanFoodModal'
 import UserProfile from './components/UserProfile'
 import { BASE_FOOD_DB } from './data/foodDb'
-import { deleteAccount, getSessionUser, listAccounts, login, logout, registerAccount, syncAccountsFromCloud, syncAccountsToCloud, updateAccountProfile } from './services/auth'
+import { deleteAccount, getSessionUser, listAccounts, login, loginWithGoogle, logout, registerAccount, syncAccountsFromCloud, syncAccountsToCloud, updateAccountProfile } from './services/auth'
 import { predictFoodsWithAI, rankFoodResults, searchFoodsFromPublicRepo } from './services/foodSearch'
 import { loadTrackerState, pullTrackerStateFromCloud, pushTrackerStateToCloud, saveTrackerState } from './services/storage'
 import type {
@@ -81,6 +81,17 @@ function tabLabel(tab: TabName): string {
   return 'Admin'
 }
 
+function hasProfileValues(profile: UserProfileType): boolean {
+  return Boolean(
+    profile.name.trim()
+    || profile.age
+    || profile.heightCm
+    || profile.weightKg
+    || profile.sex
+    || profile.photoDataUrl,
+  )
+}
+
 function App() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => getSessionUser())
   const [accounts, setAccounts] = useState<UserAccount[]>(() => listAccounts())
@@ -151,6 +162,10 @@ function App() {
       const cloudState = await pullTrackerStateFromCloud(sessionUser.email)
       if (!cloudState) return
 
+      const localProfile = trackerState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null }
+      const cloudProfile = cloudState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null }
+      const nextProfile = hasProfileValues(localProfile) ? localProfile : cloudProfile
+
       setGoal(cloudState.goal)
       setGoalInput(String(cloudState.goal))
       setLog(cloudState.log)
@@ -158,7 +173,7 @@ function App() {
       setWorkoutProgress(cloudState.workoutProgress)
       setGymActivities(cloudState.gymActivities)
       setCustomSchedule(cloudState.customSchedule ?? {})
-      setUserProfile(cloudState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null })
+      setUserProfile(nextProfile)
       setWeightLog(cloudState.weightLog ?? [])
     })()
   }, [sessionUser])
@@ -283,6 +298,15 @@ function App() {
 
   function handleLogin(email: string, password: string): SessionUser | null {
     const session = login(email, password)
+    setSessionUser(session)
+    const nextAccounts = listAccounts()
+    setAccounts(nextAccounts)
+    void syncAccountsToCloud(nextAccounts)
+    return session
+  }
+
+  async function handleGoogleLogin(idToken: string): Promise<SessionUser | null> {
+    const session = await loginWithGoogle(idToken)
     setSessionUser(session)
     const nextAccounts = listAccounts()
     setAccounts(nextAccounts)
@@ -484,7 +508,7 @@ function App() {
   }
 
   if (!sessionUser) {
-    return <LoginForm onLogin={handleLogin} onRegister={handleRegister} />
+    return <LoginForm onLogin={handleLogin} onRegister={handleRegister} onGoogleLogin={handleGoogleLogin} />
   }
 
   const inputStyle = {

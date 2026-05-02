@@ -1,6 +1,6 @@
 import type { RegisterAccountInput, SessionUser, UserAccount, UserRole } from '../types'
 import { readCloudValue, writeCloudValue } from './cloudSync'
-import { clearCloudSessionToken, startCloudSession } from './cloudSession'
+import { clearCloudSessionToken, startCloudSession, startCloudSessionWithGoogle } from './cloudSession'
 import { createPasswordHash, verifyPasswordHash } from './password'
 
 const SESSION_KEY = 'caloriecounter-session'
@@ -59,6 +59,7 @@ function normalizeAccount(account: UserAccount): { account: UserAccount; changed
 
   const normalized: UserAccount = {
     ...account,
+    authProvider: account.authProvider || 'local',
     email: normalizeEmail(account.email),
     fullName: account.fullName || account.displayName,
     age: Number.isFinite(account.age) ? account.age : null,
@@ -78,6 +79,46 @@ function normalizeAccount(account: UserAccount): { account: UserAccount; changed
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
+}
+
+function createLocalSession(account: UserAccount): SessionUser {
+  return {
+    email: account.email,
+    displayName: account.displayName,
+    role: account.role,
+  }
+}
+
+function persistSession(session: SessionUser): void {
+  try {
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  } catch {
+    // Ignore persistence errors and still return the session.
+  }
+}
+
+function decodeGoogleIdToken(idToken: string): { email: string; name: string } | null {
+  const parts = idToken.split('.')
+  if (parts.length < 2) return null
+
+  try {
+    const payloadPart = parts[1]
+    const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+    const json = window.atob(padded)
+    const payload = JSON.parse(json) as { email?: string; name?: string; email_verified?: boolean | string }
+
+    const email = normalizeEmail(payload.email || '')
+    const isVerified = payload.email_verified === true || payload.email_verified === 'true'
+    if (!email || !isVerified) return null
+
+    return {
+      email,
+      name: (payload.name || email).trim(),
+    }
+  } catch {
+    return null
+  }
 }
 
 function readAccounts(): UserAccount[] {
@@ -235,20 +276,80 @@ export function login(email: string, password: string): SessionUser | null {
     return null
   }
 
-  const session: SessionUser = {
-    email: account.email,
-    displayName: account.displayName,
-    role: account.role,
-  }
-
-  try {
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-  } catch {
-    // Ignore persistence errors and still return the session.
-  }
+  const session = createLocalSession(account)
+  persistSession(session)
 
   void startCloudSession(account.email, password)
 
+  return session
+}
+
+export async function loginWithGoogle(idToken: string): Promise<SessionUser | null> {
+  const cloudSession = await startCloudSessionWithGoogle(idToken)
+  if (cloudSession) {
+    const accounts = readAccounts()
+    const existing = accounts.find((account) => account.email === normalizeEmail(cloudSession.email))
+    if (!existing) {
+      const now = new Date().toISOString()
+      const newGoogleAccount: UserAccount = {
+        authProvider: 'google',
+        email: normalizeEmail(cloudSession.email),
+        displayName: cloudSession.displayName,
+        role: cloudSession.role,
+        fullName: cloudSession.displayName,
+        age: null,
+        sex: null,
+        phone: '',
+        createdAt: now,
+        updatedAt: now,
+      }
+      const updated = [...accounts, newGoogleAccount]
+      writeAccounts(updated)
+      void syncAccountsToCloud(updated)
+    }
+
+    persistSession(cloudSession)
+    return cloudSession
+  }
+
+  // Local fallback for pure Vite dev where /api routes are unavailable.
+  const decoded = decodeGoogleIdToken(idToken)
+  if (!decoded) return null
+
+  const accounts = readAccounts()
+  const idx = accounts.findIndex((account) => account.email === decoded.email)
+  const now = new Date().toISOString()
+
+  if (idx >= 0) {
+    accounts[idx] = {
+      ...accounts[idx],
+      authProvider: 'google',
+      displayName: accounts[idx].displayName || decoded.name,
+      fullName: accounts[idx].fullName || decoded.name,
+      updatedAt: now,
+    }
+  } else {
+    const newGoogleAccount: UserAccount = {
+      authProvider: 'google',
+      email: decoded.email,
+      displayName: decoded.name,
+      role: 'user',
+      fullName: decoded.name,
+      age: null,
+      sex: null,
+      phone: '',
+      createdAt: now,
+      updatedAt: now,
+    }
+    accounts.push(newGoogleAccount)
+  }
+
+  writeAccounts(accounts)
+  const account = accounts.find((item) => item.email === decoded.email)
+  if (!account) return null
+
+  const session = createLocalSession(account)
+  persistSession(session)
   return session
 }
 

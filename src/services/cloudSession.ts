@@ -53,3 +53,35 @@ export async function startCloudSession(email: string, password: string): Promis
     return null
   }
 }
+
+export async function startCloudSessionWithGoogle(idToken: string): Promise<SessionUser | null> {
+  try {
+    const response = await fetch(authEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'google-login', idToken }),
+    })
+
+    if (!response.ok) return null
+    const payload = await response.json() as {
+      ok: boolean
+      token?: string
+      session?: SessionUser
+    }
+
+    if (!payload.ok || !payload.token || !payload.session) return null
+
+    try {
+      window.localStorage.setItem(CLOUD_SESSION_TOKEN_KEY, payload.token)
+    } catch {
+      // Ignore storage errors.
+    }
+
+    return payload.session
+  } catch {
+    return null
+  }
+}

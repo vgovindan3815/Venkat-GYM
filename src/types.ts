@@ -2,6 +2,7 @@ export type UserRole = 'user' | 'admin'
 
 export type UserAccount = {
   email: string
+  authProvider?: 'local' | 'google'
   password?: string
   passwordHash?: string
   passwordSalt?: string
