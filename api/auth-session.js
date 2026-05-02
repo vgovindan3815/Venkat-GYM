@@ -25,7 +25,11 @@ function send(res, statusCode, payload) {
 
 async function loadAccounts() {
   const raw = await getValue('accounts:v1')
-  if (!raw) return DEFAULT_ACCOUNTS
+  if (!raw) {
+    const normalizedDefaults = DEFAULT_ACCOUNTS.map((account) => normalizeAccountPassword(account).account)
+    await setValue('accounts:v1', JSON.stringify(normalizedDefaults))
+    return normalizedDefaults
+  }
 
   try {
     const parsed = JSON.parse(raw)
@@ -46,7 +50,9 @@ async function loadAccounts() {
 
     return normalized
   } catch {
-    return DEFAULT_ACCOUNTS
+    const normalizedDefaults = DEFAULT_ACCOUNTS.map((account) => normalizeAccountPassword(account).account)
+    await setValue('accounts:v1', JSON.stringify(normalizedDefaults))
+    return normalizedDefaults
   }
 }
 
