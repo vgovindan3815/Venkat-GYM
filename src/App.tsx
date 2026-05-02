@@ -6,9 +6,9 @@ import LoginForm from './components/LoginForm'
 import ScanFoodModal from './components/ScanFoodModal'
 import UserProfile from './components/UserProfile'
 import { BASE_FOOD_DB } from './data/foodDb'
-import { deleteAccount, getSessionUser, listAccounts, login, logout, registerAccount, updateAccountProfile } from './services/auth'
+import { deleteAccount, getSessionUser, listAccounts, login, logout, registerAccount, syncAccountsFromCloud, syncAccountsToCloud, updateAccountProfile } from './services/auth'
 import { predictFoodsWithAI, rankFoodResults, searchFoodsFromPublicRepo } from './services/foodSearch'
-import { loadTrackerState, saveTrackerState } from './services/storage'
+import { loadTrackerState, pullTrackerStateFromCloud, pushTrackerStateToCloud, saveTrackerState } from './services/storage'
 import type {
   Food,
   FoodSearchResult,
@@ -124,6 +124,16 @@ function App() {
   const today = getTodayKey()
 
   useEffect(() => {
+    // Pull latest account list snapshot from cloud (if available).
+    void (async () => {
+      const cloudAccounts = await syncAccountsFromCloud()
+      if (cloudAccounts) {
+        setAccounts(cloudAccounts)
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
     if (!sessionUser) return
     const trackerState = loadTrackerState(sessionUser.email)
     setGoal(trackerState.goal)
@@ -135,11 +145,29 @@ function App() {
     setCustomSchedule(trackerState.customSchedule ?? {})
     setUserProfile(trackerState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null })
     setWeightLog(trackerState.weightLog ?? [])
+
+    // Hydrate from cloud snapshot and override local state if found.
+    void (async () => {
+      const cloudState = await pullTrackerStateFromCloud(sessionUser.email)
+      if (!cloudState) return
+
+      setGoal(cloudState.goal)
+      setGoalInput(String(cloudState.goal))
+      setLog(cloudState.log)
+      setCustomFoods(cloudState.customFoods)
+      setWorkoutProgress(cloudState.workoutProgress)
+      setGymActivities(cloudState.gymActivities)
+      setCustomSchedule(cloudState.customSchedule ?? {})
+      setUserProfile(cloudState.userProfile ?? { name: '', age: null, heightCm: null, weightKg: null, sex: null, photoDataUrl: null })
+      setWeightLog(cloudState.weightLog ?? [])
+    })()
   }, [sessionUser])
 
   useEffect(() => {
     if (!sessionUser) return
-    saveTrackerState({ goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog }, sessionUser.email)
+    const nextState = { goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog }
+    saveTrackerState(nextState, sessionUser.email)
+    void pushTrackerStateToCloud(nextState, sessionUser.email)
   }, [goal, log, customFoods, workoutProgress, gymActivities, customSchedule, userProfile, weightLog, sessionUser])
 
   useEffect(() => {
@@ -256,7 +284,9 @@ function App() {
   function handleLogin(email: string, password: string): SessionUser | null {
     const session = login(email, password)
     setSessionUser(session)
-    setAccounts(listAccounts())
+    const nextAccounts = listAccounts()
+    setAccounts(nextAccounts)
+    void syncAccountsToCloud(nextAccounts)
     return session
   }
 
@@ -268,7 +298,9 @@ function App() {
 
     const session = login(input.email, input.password)
     setSessionUser(session)
-    setAccounts(listAccounts())
+    const nextAccounts = listAccounts()
+    setAccounts(nextAccounts)
+    void syncAccountsToCloud(nextAccounts)
     return { session }
   }
 

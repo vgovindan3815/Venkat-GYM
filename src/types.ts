@@ -2,7 +2,10 @@ export type UserRole = 'user' | 'admin'
 
 export type UserAccount = {
   email: string
-  password: string
+  password?: string
+  passwordHash?: string
+  passwordSalt?: string
+  passwordIterations?: number
   displayName: string
   role: UserRole
   fullName: string
